@@ -2,6 +2,20 @@ import { establishPrimitive } from "./webkit.js";
 import { installWindowP } from "./utils/mem.js";
 
 const output = document.getElementById("console");
+const AUTOLOADER_URL = window.location.origin.replace(/:\d+$/, ":8000");
+
+function triggerAutoloader() {
+  fetch(`${AUTOLOADER_URL}/ready`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: "ps5",
+      ip: window.location.hostname,
+    }),
+  }).catch((error) => {
+    console.error("autoloader trigger failed:", error);
+  });
+}
 
 function writeLog(message, type = "log", replace = false) {
   let line = replace ? output.lastElementChild : null;
@@ -60,6 +74,7 @@ async function run() {
 
   await import("./relapse_exploit.js");
   await main(primitive);
+  triggerAutoloader();
 }
 
 run().catch((error) => writeLog(error instanceof Error ? error.message : String(error), "error"));
