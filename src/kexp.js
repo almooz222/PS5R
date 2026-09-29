@@ -272,24 +272,5 @@ export async function runKexp(krw, p, chain, log) {
   if (result.joinResult !== 0)
     throw new Error("kexp: pthread_join returned " + hex(result.joinResult));
   say("elfldr returned " + hex(result.shellcodeResult));
-
-  // After elfldr and kexp have run, also load and execute additional payloads
-  const extraPayloads = ["kstuff.elf", "shadowmountplus.elf"];
-  for (const name of extraPayloads) {
-    try {
-      say(`loading extra payload ${name}`);
-      const blob2 = await fetchBinary(name);
-      const entry2 = await mapExecutable(blob2, p, chain);
-      // Prepare minimal args for the new payload thread
-      const args2 = p.malloc(0x28);
-      for (let offset = 0; offset < 0x28; offset += 8) p.write8(args2.add32(offset), 0);
-      const res2 = await spawnAndJoin(entry2, args2, symbols, p, chain);
-      if (res2.joinResult !== 0) say(`payload ${name} pthread_join returned ${hex(res2.joinResult)}`);
-      else say(`payload ${name} executed, result ${hex(res2.shellcodeResult)}`);
-    } catch (e) {
-      say(`extra payload ${name} failed: ${String(e)}`);
-    }
-  }
-
   return true;
 }
