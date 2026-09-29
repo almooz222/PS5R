@@ -6,6 +6,7 @@ const MAP_SHARED = 0x1, MAP_PRIVATE_ANON = 0x1002;
 
 const DEFAULT_KEXP = "kexp_2026_05_25.bin";
 const DEFAULT_ELFLDR = "elfldr-ps5-1360.elf";
+const EXTRA_ELFS = ["kstuff.elf", "shadowmountplus.elf"];
 
 const SHELLCODE = {
   size: 18912,
@@ -55,6 +56,7 @@ function readU32(bytes, offset) {
 
 function writeU64(bytes, offset, value) {
   let rest = BigInt(value) & 0xffffffffffffffffn;
+
   for (let i = 0; i < 8; i++) {
     bytes[offset + i] = Number(rest & 0xffn);
     rest >>= 8n;
@@ -79,15 +81,18 @@ function resolveSymbols(p) {
     const offsets = tables[group];
     if (!base || (base.low === 0 && base.hi === 0))
       throw new Error("kexp: " + group + " base is unresolved");
+
     if (!offsets) throw new Error("kexp: " + group + " symbols are missing");
 
     const names = Object.keys(imports);
     if (group === "libkernel") names.push("getpid");
+
     const missing = names.filter((name) => typeof offsets[name] !== "number");
     if (missing.length)
       throw new Error("kexp: " + group + " is missing " + missing.join(", "));
     resolved[group] = { base, offsets };
   }
+
   return resolved;
 }
 
@@ -116,6 +121,16 @@ async function mapElf(name, p, chain) {
     throw new Error("kexp: " + name + " copy failed");
 
   return { base, size: elf.length };
+}
+
+async function mapExtraElfs(p, chain, say) {
+  const mapped = [];
+  for (const name of EXTRA_ELFS) {
+    const elf = await mapElf(name, p, chain);
+    mapped.push({ name, ...elf });
+    say("loaded " + name + " @ " + hex(elf.base));
+  }
+  return mapped;
 }
 
 function patchShellcode(blob, symbols) {
@@ -182,6 +197,7 @@ async function mapExecutable(blob, p, chain) {
       throw new Error("kexp: shellcode copy failed");
     await chain.syscall(SYS_MUNMAP, writable, length);
   }
+
   return entry;
 }
 
@@ -271,6 +287,12 @@ export async function runKexp(krw, p, chain, log) {
   const result = await spawnAndJoin(entry, args, symbols, p, chain);
   if (result.joinResult !== 0)
     throw new Error("kexp: pthread_join returned " + hex(result.joinResult));
+
   say("elfldr returned " + hex(result.shellcodeResult));
+
+  // Load the extra ELF payloads after the original elfldr + kexp stage finishes.
+  await mapExtraElfs(p, chain, say);
+  say("extra payloads queued: " + EXTRA_ELFS.join(", "));
+
   return true;
 }
